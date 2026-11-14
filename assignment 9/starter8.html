@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CSCE 5320 - HW8 Starter (node-link + adjacency matrix)</title>
+<script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
+<style>
+  body    { font-family: system-ui, Arial, sans-serif; margin: 22px; color: #222; }
+  h1      { font-size: 20px; margin-bottom: 2px; }
+  #status { font-size: 13px; color: #555; margin: 4px 0 10px; }
+  button  { font: inherit; padding: 5px 11px; margin-right: 6px; cursor: pointer;
+            border: 1px solid #bbb; background: #fff; border-radius: 4px; }
+  button.on { background: #1f3864; color: #fff; border-color: #1f3864; }
+  .link   { stroke: #999; stroke-opacity: 0.45; }
+  .node   { stroke: #fff; stroke-width: 1px; cursor: grab; }
+  .cell   { stroke: #fff; stroke-width: 0.4px; }
+  .mlabel { font-size: 7px; fill: #555; }
+  .panel  { display: inline-block; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>HW8 &mdash; Arrange Networks and Trees</h1>
+<div id="status">loading&hellip;</div>
+
+<div id="controls">
+  <button id="o-file"    class="on">Matrix order: file order</button>
+  <button id="o-degree">Matrix order: by degree</button>
+  <button id="o-cluster">Matrix order: by cluster</button>
+</div>
+
+<div class="panel"><svg id="nodelink" width="560" height="520"></svg></div>
+<div class="panel"><svg id="matrix"   width="560" height="520"></svg></div>
+
+<script>
+// =============== point these at YOUR network ===============
+// An EDGE LIST is all you need. Node ids are inferred from the edges,
+// so a two-column csv of source,target is the minimum.
+const EDGES_URL = 'hw8_network_edges.csv';
+const SRC = 'source', TGT = 'target';
+const GROUP = 'source_country';   // optional: a categorical attribute for colour
+
+Promise.all([d3.csv(EDGES_URL)]).then(([links]) => {
+
+  // ---------- derive the node list from the edges ----------
+  const ids = Array.from(new Set(links.flatMap(l => [l[SRC], l[TGT]]))).sort();
+  const group = new Map();
+  links.forEach(l => { if (!group.has(l[SRC])) group.set(l[SRC], l[GROUP]); });
+  const nodes = ids.map(id => ({ id, group: group.get(id) || 'n/a' }));
+  const index = new Map(nodes.map((n, i) => [n.id, i]));
+
+  // degree, computed from the edge list
+  nodes.forEach(n => n.degree = 0);
+  links.forEach(l => { nodes[index.get(l[SRC])].degree++;
+                       nodes[index.get(l[TGT])].degree++; });
+
+  const density = (links.length / nodes.length).toFixed(2);
+  d3.select('#status').html(
+    `<b>${nodes.length}</b> nodes, <b>${links.length}</b> links, ` +
+    `link density <b>${density}</b> links per node ` +
+    `(the reading warns above 3&ndash;4)`);
+
+  const color = d3.scaleOrdinal()
+                  .domain([...new Set(nodes.map(n => n.group))])
+                  .range(d3.schemeTableau10);
+
+  // =========================================================
+  // VIEW 1 - NODE-LINK, force-directed.
+  // Note: this layout is NON-DETERMINISTIC. Reload the page and
+  // the picture changes. Question 1 asks you about exactly that.
+  // =========================================================
+  const svg1 = d3.select('#nodelink');
+  const W1 = +svg1.attr('width'), H1 = +svg1.attr('height');
+  svg1.append('text').attr('x', 8).attr('y', 16).style('font-size', '13px')
+      .style('font-weight', 'bold').text('Node-link (force-directed)');
+
+  const L = links.map(l => ({ source: l[SRC], target: l[TGT] }));
+  const N = nodes.map(n => ({ ...n }));
+
+  const sim = d3.forceSimulation(N)
+      .force('link', d3.forceLink(L).id(d => d.id).distance(40))
+      .force('charge', d3.forceManyBody().strength(-110))
+      .force('center', d3.forceCenter(W1 / 2, H1 / 2 + 10))
+      .force('collide', d3.forceCollide(9));
+
+  const lsel = svg1.append('g').selectAll('line').data(L).join('line')
+      .attr('class', 'link');
+  const nsel = svg1.append('g').selectAll('circle').data(N).join('circle')
+      .attr('class', 'node')
+      .attr('r', d => 3 + Math.sqrt(d.degree) * 1.1)
+      .attr('fill', d => color(d.group))
+      .call(d3.drag()
+        .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart();
+                                 d.fx = d.x; d.fy = d.y; })
+        .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+        .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0);
+                                 d.fx = null; d.fy = null; }));
+  nsel.append('title').text(d => `${d.id} (degree ${d.degree})`);
+
+  sim.on('tick', () => {
+    lsel.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    nsel.attr('cx', d => d.x = Math.max(10, Math.min(W1 - 10, d.x)))
+        .attr('cy', d => d.y = Math.max(26, Math.min(H1 - 10, d.y)));
+  });
+
+  // =========================================================
+  // VIEW 2 - ADJACENCY MATRIX of the SAME network.
+  // The order of the rows and columns is a design choice.
+  // =========================================================
+  const svg2 = d3.select('#matrix');
+  const W2 = +svg2.attr('width'), H2 = +svg2.attr('height');
+  const m = { top: 56, right: 10, bottom: 10, left: 46 };
+  const side = Math.min(W2 - m.left - m.right, H2 - m.top - m.bottom);
+
+  // adjacency as a set of "i,j" keys - undirected, so fill both triangles
+  const adj = new Set();
+  links.forEach(l => {
+    const i = index.get(l[SRC]), j = index.get(l[TGT]);
+    adj.add(i + ',' + j); adj.add(j + ',' + i);
+  });
+
+  const title = svg2.append('text').attr('x', 8).attr('y', 16)
+      .style('font-size', '13px').style('font-weight', 'bold');
+  const g2 = svg2.append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+  function drawMatrix(order) {
+    let ids2 = nodes.map(n => n.id);
+    if (order === 'degree')
+      ids2 = nodes.slice().sort((a, b) => b.degree - a.degree).map(n => n.id);
+    if (order === 'cluster')
+      ids2 = nodes.slice().sort((a, b) =>
+        d3.ascending(a.group, b.group) || b.degree - a.degree).map(n => n.id);
+
+    const s = d3.scaleBand().domain(ids2).range([0, side]).padding(0.04);
+    title.text('Adjacency matrix - order: ' + order);
+    g2.selectAll('*').remove();
+
+    const cells = [];
+    ids2.forEach(ri => ids2.forEach(ci => {
+      if (adj.has(index.get(ri) + ',' + index.get(ci)))
+        cells.push({ ri, ci });
+    }));
+
+    g2.selectAll('rect').data(cells).join('rect')
+      .attr('class', 'cell')
+      .attr('x', d => s(d.ci)).attr('y', d => s(d.ri))
+      .attr('width', s.bandwidth()).attr('height', s.bandwidth())
+      .attr('fill', d => color(group.get(d.ri) || 'n/a'));
+
+    g2.selectAll('text.r').data(ids2).join('text').attr('class', 'mlabel r')
+      .attr('x', -3).attr('y', d => s(d) + s.bandwidth() * 0.8)
+      .attr('text-anchor', 'end').text(d => d);
+    g2.selectAll('text.c').data(ids2).join('text').attr('class', 'mlabel c')
+      .attr('transform', d => `translate(${s(d) + s.bandwidth() * 0.8},-3) rotate(-90)`)
+      .text(d => d);
+
+    ['file', 'degree', 'cluster'].forEach(k =>
+      d3.select('#o-' + k).classed('on', k === order));
+  }
+
+  drawMatrix('file');
+  d3.select('#o-file').on('click',    () => drawMatrix('file'));
+  d3.select('#o-degree').on('click',  () => drawMatrix('degree'));
+  d3.select('#o-cluster').on('click', () => drawMatrix('cluster'));
+
+}).catch(e => d3.select('#status').html('<b style="color:#b00">Load failed:</b> ' + e));
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+
+# Local editor settings
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# JavaScript dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+
+# Local secrets and logs
+.env
+.env.*
+!.env.example
+*.log

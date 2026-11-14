@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CSCE 5320 - HW5 Starter</title>
+
+<!-- D3 v7. Keep this line exactly as it is. -->
+<script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
+
+<style>
+  /* ---- Q1 asks you to style this page. Edit freely. ---- */
+  body        { font-family: system-ui, Arial, sans-serif; margin: 24px; color: #222; }
+  h1          { font-size: 20px; margin-bottom: 4px; }
+  #summary    { background: #f4f6fa; border: 1px solid #ccd; padding: 10px 14px;
+                border-radius: 6px; font-size: 14px; max-width: 680px; }
+  #summary b  { color: #1f3864; }
+  .axis text  { font-size: 11px; fill: #555; }
+  .axis-label { font-size: 12px; fill: #333; }
+  .mark       { stroke: #fff; stroke-width: 0.5px; }
+</style>
+</head>
+
+<body>
+<h1>HW5 &mdash; Marks and Channels</h1>
+
+<!-- The data summary from Q1 gets written in here by JavaScript. -->
+<div id="summary">loading data&hellip;</div>
+
+<!-- Every chart is drawn inside this one SVG element. -->
+<svg id="chart" width="900" height="520"></svg>
+
+<script>
+// ===================================================================
+// STEP 1 - point this at YOUR raw gist URL.
+// ===================================================================
+const DATA_URL = 'hw5_sample_data.csv';
+
+// These are the columns that must become numbers.
+// Change them to match the numeric columns in YOUR csv.
+const NUMERIC_COLUMNS = [
+  'income_rank', 'population_millions', 'gdp_per_capita',
+  'co2_per_capita', 'co2_total_mt', 'renewable_pct', 'energy_per_capita'
+];
+
+// Change these three to your own column names and the whole file follows.
+const X_COL = 'gdp_per_capita';     // quantitative -> x position
+const Y_COL = 'co2_per_capita';     // quantitative -> y position
+const CAT_COL = 'region';           // categorical  -> colour, in Q2
+const SIZE_COL = 'population_millions'; // quantitative -> area, in Q2
+
+// The margin convention: leave room around the plotting area for axes.
+const svg    = d3.select('#chart');
+const width  = +svg.attr('width');
+const height = +svg.attr('height');
+const margin = { top: 20, right: 180, bottom: 60, left: 80 };
+const innerW = width  - margin.left - margin.right;
+const innerH = height - margin.top  - margin.bottom;
+
+// One group element, shifted inward. All marks go inside it.
+const g = svg.append('g')
+             .attr('transform', `translate(${margin.left},${margin.top})`);
+
+// ===================================================================
+// STEP 2 - load the csv, convert numbers, then draw.
+// ===================================================================
+d3.csv(DATA_URL, d => {
+  // d3.csv reads EVERY value as a string. "+" converts it to a number.
+  NUMERIC_COLUMNS.forEach(c => { d[c] = +d[c]; });
+  return d;
+}).then(data => {
+
+  // -----------------------------------------------------------------
+  // Q1 - summarise the data on the page.
+  // TODO: add mean and median here as well.
+  // -----------------------------------------------------------------
+  const xExtent = d3.extent(data, d => d[X_COL]);
+  d3.select('#summary').html(`
+    <b>Rows:</b> ${data.length} &nbsp;&nbsp;
+    <b>Columns:</b> ${data.columns.length}<br>
+    <b>Fields:</b> ${data.columns.join(', ')}<br>
+    <b>${X_COL}</b> ranges from ${d3.format(',')(xExtent[0])}
+    to ${d3.format(',')(xExtent[1])}
+  `);
+
+  // -----------------------------------------------------------------
+  // Scales turn a data value into a screen value.
+  // -----------------------------------------------------------------
+  const x = d3.scaleLinear()
+              .domain(d3.extent(data, d => d[X_COL])).nice()
+              .range([0, innerW]);
+
+  const y = d3.scaleLinear()
+              .domain(d3.extent(data, d => d[Y_COL])).nice()
+              .range([innerH, 0]);          // flipped: SVG y grows downward
+
+  // -----------------------------------------------------------------
+  // Axes.
+  // -----------------------------------------------------------------
+  g.append('g').attr('class', 'axis')
+   .attr('transform', `translate(0,${innerH})`)
+   .call(d3.axisBottom(x).ticks(6).tickFormat(d3.format('~s')));
+
+  g.append('g').attr('class', 'axis')
+   .call(d3.axisLeft(y).ticks(6));
+
+  g.append('text').attr('class', 'axis-label')
+   .attr('x', innerW / 2).attr('y', innerH + 42)
+   .attr('text-anchor', 'middle').text(X_COL);
+
+  g.append('text').attr('class', 'axis-label')
+   .attr('transform', 'rotate(-90)')
+   .attr('x', -innerH / 2).attr('y', -52)
+   .attr('text-anchor', 'middle').text(Y_COL);
+
+  // ===================================================================
+  // YOUR MARKS GO HERE.
+  //
+  // As supplied this is Q1 Version 1: position only. Every mark is the
+  // same size and the same colour on purpose.
+  //
+  // Q2 asks you to add  .attr('fill', ...)  and then  .attr('r', ...).
+  // ===================================================================
+  g.selectAll('circle.mark')
+   .data(data)
+   .join('circle')
+     .attr('class', 'mark')
+     .attr('cx', d => x(d[X_COL]))
+     .attr('cy', d => y(d[Y_COL]))
+     .attr('r', 5)
+     .attr('fill', '#4878a8');
+
+}).catch(err => {
+  d3.select('#summary').html('<b style="color:#b00">Could not load the data.</b> ' + err);
+});
+</script>
+</body>
+</html>
